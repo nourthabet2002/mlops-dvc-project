@@ -20,6 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Configure AWS credentials
@@ -29,17 +30,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # ✅ DEBUG STEP 1
+      # ✅ DEBUG STEP 1: confirm identity
       - name: Who am I (AWS identity)?
         run: aws sts get-caller-identity
 
-      # ✅ DEBUG STEP 2
+      # ✅ DEBUG STEP 2: print DVC remote config
+      - name: Debug DVC config
+        run: |
+          echo "=== .dvc/config ==="
+          cat .dvc/config || true
+          echo "=== DVC remotes ==="
+          dvc remote list || true
+
+      # ✅ DEBUG STEP 3: test S3 access
       - name: Test S3 access (list)
-        run: aws s3 ls s3://my-bucket-dvc-nour-2026/dvc-storage/ --region eu-west-3
+        run: |
+          aws s3 ls s3://my-bucket-dvc-nour-2026/ --region ${{ secrets.AWS_DEFAULT_REGION }}
+          aws s3 ls s3://my-bucket-dvc-nour-2026/dvc-storage/ --region ${{ secrets.AWS_DEFAULT_REGION }}
 
       - name: DVC pull
         run: |
-          dvc pull
+          dvc pull -v
 
       - name: Run script
         run: |
