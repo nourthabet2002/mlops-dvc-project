@@ -1,0 +1,7 @@
+[core]
+    remote = myremote
+['remote "myremote"']
+    url = s3://my-bucket-dvc-nour-2026/dvc-storage
+    access_key_id = AKIAQDNFUICEFJFXLGNT
+    secret_access_key = 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
+    region = eu-west-3
