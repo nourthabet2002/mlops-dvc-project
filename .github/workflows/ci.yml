@@ -2,7 +2,7 @@ name: CI - DVC + AWS
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -10,19 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout repository
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2️⃣ Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # 3️⃣ Install dependencies + DVC with S3 support
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install "dvc[s3]"
+          dvc --version
 
+      # 4️⃣ Configure AWS credentials from GitHub Secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -30,28 +36,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # ✅ DEBUG STEP 1: confirm identity
-      - name: Who am I (AWS identity)?
+      # 5️⃣ Debug: confirm AWS identity
+      - name: Confirm AWS identity
         run: aws sts get-caller-identity
 
-      # ✅ DEBUG STEP 2: print DVC remote config
-      - name: Debug DVC config
+      # 6️⃣ Debug: verify S3 access
+      - name: Test S3 access
         run: |
-          echo "=== .dvc/config ==="
-          cat .dvc/config || true
-          echo "=== DVC remotes ==="
-          dvc remote list || true
+          aws s3 ls s3://my-bucket-dvc-nour-2026/ --region "${{ secrets.AWS_DEFAULT_REGION }}"
+          aws s3 ls s3://my-bucket-dvc-nour-2026/dvc-storage/ --region "${{ secrets.AWS_DEFAULT_REGION }}" || true
 
-      # ✅ DEBUG STEP 3: test S3 access
-      - name: Test S3 access (list)
-        run: |
-          aws s3 ls s3://my-bucket-dvc-nour-2026/ --region ${{ secrets.AWS_DEFAULT_REGION }}
-          aws s3 ls s3://my-bucket-dvc-nour-2026/dvc-storage/ --region ${{ secrets.AWS_DEFAULT_REGION }}
-
+      # 7️⃣ Pull DVC data
       - name: DVC pull
-        run: |
-          dvc pull -v
+        run: dvc pull -v
 
+      # 8️⃣ Run your script
       - name: Run script
-        run: |
-          python script.py
+        run: python script.py
