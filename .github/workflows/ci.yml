@@ -1,34 +1,36 @@
-name: CI - DVC + AWS
+name: CI - DVC + AWS + CML
 
 on:
   push:
     branches: ["main"]
+  pull_request:
   workflow_dispatch:
+
+permissions: write-all
 
 jobs:
   run:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Python
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3️⃣ Install dependencies + DVC with S3 support
+      - name: Set up CML
+        uses: iterative/setup-cml@v2
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install "dvc[s3]"
+          pip install "dvc[s3]==3.63.0"
           dvc --version
 
-      # 4️⃣ Configure AWS credentials from GitHub Secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -36,20 +38,37 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # 5️⃣ Debug: confirm AWS identity
-      - name: Confirm AWS identity
-        run: aws sts get-caller-identity
+      - name: DVC pull (restore data/models)
+        run: dvc pull -v || echo "No remote cache yet"
 
-      # 6️⃣ Debug: verify S3 access
-      - name: Test S3 access
+      - name: Train + version outputs + push to S3
         run: |
-          aws s3 ls s3://my-bucket-dvc-nour-2026/ --region "${{ secrets.AWS_DEFAULT_REGION }}"
-          aws s3 ls s3://my-bucket-dvc-nour-2026/dvc-storage/ --region "${{ secrets.AWS_DEFAULT_REGION }}" || true
+          python script.py
 
-      # 7️⃣ Pull DVC data
-      - name: DVC pull
-        run: dvc pull -v
+          # Track updated outputs
+          dvc add data models
 
-      # 8️⃣ Run your script
-      - name: Run script
-        run: python script.py
+          # Commit DVC metadata back to GitHub
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+          git add data.dvc models.dvc || true
+          [ -f dvc.lock ] && git add dvc.lock
+
+          git commit -m "Update data/models [skip ci]" || echo "nothing to commit"
+
+          # Push artifacts (blobs) to S3
+          dvc push -v
+
+      - name: Publish CML report
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## Metrics" > report.md
+          cat metrics.txt >> report.md
+          echo "" >> report.md
+          echo "## Confusion Matrix" >> report.md
+          echo "![](./conf_matrix.png)" >> report.md
+
+          # Prefer PR comment; fallback to commit comment
+          cml comment create --pr report.md || cml comment create --commit-sha "$GITHUB_SHA" report.md
